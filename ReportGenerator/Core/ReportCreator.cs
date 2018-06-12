@@ -17,9 +17,6 @@ namespace Core
 
         public ReportCreator()
         {
-            _uri = "https://medapro.visualstudio.com";
-            _personalAccessToken = "23m3msqzrvvma7kzeqsozdiyqubtghpm7uz5wrzzm63bbzq4s5fa";
-            _project = "India";
         }
 
         public void CreateEstimateForExistingWorkItems()
