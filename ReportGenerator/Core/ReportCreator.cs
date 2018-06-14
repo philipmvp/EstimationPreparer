@@ -11,18 +11,24 @@ namespace Core
 {
     public class ReportCreator
     {
-        private string _uri;
-        private string _personalAccessToken;
-        private string _project;
+        private readonly string _uri;
+        private readonly string _personalAccessToken;
+        private readonly string _inputPath;
+        private readonly string _outputPath;
+        private readonly string _project = "India";
 
-        public ReportCreator()
+        public ReportCreator(string url, string personalToken, string inputPath, string outputPath)
         {
+            _uri = url;
+            _personalAccessToken = personalToken;
+            _inputPath = inputPath;
+            _outputPath = outputPath;
         }
 
         public void CreateEstimateForExistingWorkItems()
         {
             var workItems = GetAllLiveWorkItemsFromTeamServer();
-            var actualTimeFromWorksheets = GetActualTime(workItems.Keys.Select(x => x.Id), @"G:\PerformanceRecords");
+            var actualTimeFromWorksheets = GetActualTime(workItems.Keys.Select(x => x.Id), _inputPath);
             CreateEstimationExcel(workItems, actualTimeFromWorksheets);
         }
 
@@ -40,14 +46,19 @@ namespace Core
                     var count = 2;
                     foreach(var workItem in workItems)
                     {
+                        var estimatedEffort = workItem.Key.Fields.TryGetValue("Microsoft.VSTS.Scheduling.Effort", out double effort) ? effort : 0;
+                        var actualEffort = actualTimeFromWorksheets.TryGetValue(workItem.Key.Id, out List<float> times) ? times.Sum() : 0;
+                        if (estimatedEffort == 0 && actualEffort == 0)
+                         continue;
+
                         worksheet.Row(count).Cell(1).Value = workItem.Key.Id;
-                        worksheet.Row(count).Cell(2).Value = workItem.Key.Fields.TryGetValue("Microsoft.VSTS.Scheduling.Effort", out double effort)?effort:0;
-                        worksheet.Row(count).Cell(3).Value = actualTimeFromWorksheets.TryGetValue(workItem.Key.Id, out List<float> times) ? times.Sum(): 0;
+                        worksheet.Row(count).Cell(2).Value = estimatedEffort;
+                        worksheet.Row(count).Cell(3).Value = actualEffort;
                         worksheet.Row(count).Cell(4).Value = workItem.Value;
                         count++;
                     }
 
-                    excel.SaveAs(@"G:\Estimation\SprintEstimation.xlsx");
+                    excel.SaveAs(_outputPath);
                 }
             }
         }
@@ -180,54 +191,6 @@ namespace Core
 
                 return workItemDetails;
             }
-
-            //private List<WorkItem> GetChildWorkItemsByParent()
-            //{
-            //    int id = Convert.ToInt32(Context.GetValue<WorkItem>("$newWorkItem1").Id);
-
-            //    VssConnection connection = Context.Connection;
-            //    WorkItemTrackingHttpClient workItemTrackingClient = connection.GetClient<WorkItemTrackingHttpClient>();
-
-            //    WorkItem workitem = workItemTrackingClient.GetWorkItemAsync(id, expand: WorkItemExpand.Relations).Result;
-            //    List<WorkItem> workitems = null;
-
-            //    if (workitem.Relations == null)
-            //    {
-            //        Console.WriteLine("  No relations found for this work item");
-            //    }
-            //    else
-            //    {
-            //        List<int> list = new List<int>();
-
-            //        Console.WriteLine("Getting child work items from parent...");
-
-            //        foreach (var relation in workitem.Relations)
-            //        {
-            //            //get the child links
-            //            if (relation.Rel == "System.LinkTypes.Hierarchy-Forward")
-            //            {
-            //                var lastIndex = relation.Url.LastIndexOf("/");
-            //                var itemId = relation.Url.Substring(lastIndex + 1);
-            //                list.Add(Convert.ToInt32(itemId));
-
-            //                Console.WriteLine("  {0} ", itemId);
-            //            };
-            //        }
-
-            //        int[] workitemIds = list.ToArray();
-
-            //        workitems = workItemTrackingClient.GetWorkItemsAsync(workitemIds).Result;
-
-            //        Console.WriteLine("Getting full work item for each child...");
-
-            //        foreach (var item in workitems)
-            //        {
-            //            Console.WriteLine(" {0}: {1} : {2}", item.Fields["System.WorkItemType"], item.Id, item.Fields["System.Title"]);
-            //        }
-            //    }
-
-            //    return workitems;
-            //}
         }
     }
 }
