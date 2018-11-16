@@ -1,4 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
 using System.Windows;
 using Core;
 using System.Windows.Input;
@@ -61,9 +64,16 @@ namespace ReportGenerator
         {
             try
             {
-                var reportGnerator = new ReportCreator(Url, PersonalToken, InputPath, ResultPath);
-                reportGnerator.CreateEstimateForExistingWorkItems();
-                MessageBox.Show("Report Creation finished","Report Creation", MessageBoxButton.OK, MessageBoxImage.Information);
+                var reportGenerator = new ReportCreator(Url, PersonalToken, InputPath, ResultPath);
+                //reportGnerator.CreateEstimateForExistingWorkItems();
+                var result = reportGenerator.GetEffortsForMonth(10,2018, @"D:\PerformanceSheet");
+                reportGenerator.CreateReportForMonth(10, 18, result);
+                using (var fileStream = File.Create(@"D:\PerformanceSheet\Log.txt"))
+                {
+                    var info = new UTF8Encoding(true).GetBytes(reportGenerator.Logs.ToString());
+                    fileStream.Write(info,0,info.Length);
+                }
+                MessageBox.Show("Report Creation finished", "Report Creation", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception e)
             {
