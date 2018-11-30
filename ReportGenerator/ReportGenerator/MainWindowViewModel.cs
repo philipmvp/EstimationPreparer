@@ -66,9 +66,9 @@ namespace ReportGenerator
             {
                 var reportGenerator = new ReportCreator(Url, PersonalToken, InputPath, ResultPath);
                 //reportGnerator.CreateEstimateForExistingWorkItems();
-                var result = reportGenerator.GetEffortsForMonth(10,2018, @"D:\PerformanceSheet");
-                reportGenerator.CreateReportForMonth(10, 18, result);
-                using (var fileStream = File.Create(@"D:\PerformanceSheet\Log.txt"))
+                var result = reportGenerator.GetEffortsForMonth(Int32.Parse(ResultPath),2018);
+                reportGenerator.CreateReportForMonth(result, $@"D:\PerformanceSheet\Report_{ResultPath}_2018.xlsx");
+                using (var fileStream = File.Create($@"D:\PerformanceSheet\Log_{ResultPath}_2018.txt"))
                 {
                     var info = new UTF8Encoding(true).GetBytes(reportGenerator.Logs.ToString());
                     fileStream.Write(info,0,info.Length);

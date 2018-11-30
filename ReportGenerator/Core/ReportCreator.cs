@@ -11,6 +11,7 @@ using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.TeamFoundation.Build.WebApi;
+using Microsoft.VisualStudio.Services.Client;
 
 namespace Core
 {
@@ -21,7 +22,7 @@ namespace Core
         private readonly string _inputPath;
         private readonly string _outputPath;
         private readonly string _project = "India";
-        private readonly Regex _backlogNuberPattern = new Regex(@"#+([0-9]+)", RegexOptions.Compiled);
+        private readonly Regex _backlogNuberPattern = new Regex(@"([0-9]{4,5})", RegexOptions.Compiled);
         public StringBuilder Logs { get; internal set; }
 
         public ReportCreator(string url, string personalToken, string inputPath, string outputPath)
@@ -40,7 +41,7 @@ namespace Core
             CreateEstimationExcel(workItems, actualTimeFromWorksheets);
         }
 
-        public List<DeveloperEffortDetails> GetEffortsForMonth(int month, int year, string perfRecordsPath)
+        public List<DeveloperEffortDetails> GetEffortsForMonth(int month, int year)
         {
             var workItemEfforts = new List<DeveloperEffortDetails>();
             try
@@ -48,14 +49,14 @@ namespace Core
                 Logs.AppendLine($"{DateTime.Now} : Starting reading of performance sheet");
                 var expectedWorkingDays = GetExpectedWorkingDaysForMonth(month, year);
                 var expectedWorkingHoursForMonth = expectedWorkingDays.Count * 8;
-                foreach (var perfRecordPath in Directory.GetFiles(perfRecordsPath, "*.xlsx"))
+                foreach (var perfRecordPath in Directory.GetFiles(_inputPath, "*.xlsx"))
                 {
                     using (var excel = new XLWorkbook(perfRecordPath))
                     {
                         var fileName = Path.GetFileNameWithoutExtension(perfRecordPath);
                         Logs.AppendLine($"Reading file {fileName}");
                         var effortDetails = new DeveloperEffortDetails() { DeveloperName = Path.GetFileNameWithoutExtension(perfRecordPath).Replace("Work performance record ", string.Empty) };
-                        var sheetName = $"{month}_{year.ToString().Remove(0, 2)}";
+                        var sheetName = $"{month:D2}_{year.ToString().Remove(0, 2)}";
                         var currentMonthWorkSheet = excel.Worksheets.FirstOrDefault(x => x.Name == sheetName);
 
                         if (currentMonthWorkSheet == null)
@@ -91,18 +92,17 @@ namespace Core
                                 hoursInDayDictionary[date] += effortValue;
 
                             var intValueMatches = _backlogNuberPattern.Matches(row.Cell(2).GetValue<string>());
-                            string usedWorkitemId = null;
                             foreach (Match match in intValueMatches)
                             {
-                                usedWorkitemId = match.Groups[1].Value;
-                            }
+                                var usedWorkitemId = match.Groups[1].Value;
 
-                            if (usedWorkitemId != null)
-                            {
-                                if (effortDetails.BacklogEfforts.ContainsKey(usedWorkitemId) == false)
-                                    effortDetails.BacklogEfforts.Add(usedWorkitemId, effortValue);
-                                else
-                                    effortDetails.BacklogEfforts[usedWorkitemId] += effortValue;
+                                //if (usedWorkitemId != null)
+                                //{
+                                    if (effortDetails.BacklogEfforts.ContainsKey(usedWorkitemId) == false)
+                                        effortDetails.BacklogEfforts.Add(usedWorkitemId, effortValue);
+                                    else
+                                        effortDetails.BacklogEfforts[usedWorkitemId] += effortValue;
+                                //}
                             }
                         }
 
@@ -314,7 +314,7 @@ namespace Core
             }
         }
 
-        public void CreateReportForMonth(int month, int year, List<DeveloperEffortDetails> effortDetails)
+        public void CreateReportForMonth(List<DeveloperEffortDetails> effortDetails, string outputPath)
         {
             var combinedBacklogEfforts = new Dictionary<string, float>();
             foreach (var effortDetail in effortDetails.SelectMany(x => x.BacklogEfforts).GroupBy(x => x.Key))
@@ -332,6 +332,24 @@ namespace Core
             {
                 //get work items for the ids found in query
                 var workItems = workItemTrackingHttpClient.GetWorkItemsAsync(arr, null, null, WorkItemExpand.All).Result;
+                var taskItems = workItems.Where(x => Equals(x.Fields["System.WorkItemType"], "Task")).ToList();
+                var parentItems = workItems.Where(x => !Equals(x.Fields["System.WorkItemType"], "Task")).ToList();
+
+                foreach (var workItem in taskItems)
+                {
+                    var url = workItem.Relations.First(x => x.Rel == "System.LinkTypes.Hierarchy-Reverse").Url;
+                    var workItemId = url.Split('/').Last();
+                    if (combinedBacklogEfforts.ContainsKey(workItemId))
+                    {
+                        combinedBacklogEfforts[workItemId] += combinedBacklogEfforts[workItem.Id.ToString()];
+                    }
+                    else
+                    {
+                        combinedBacklogEfforts[workItemId] = combinedBacklogEfforts[workItem.Id.ToString()];
+                        parentItems.Add(workItemTrackingHttpClient.GetWorkItemAsync(int.Parse(workItemId), null, null,WorkItemExpand.None).Result);
+                    }
+                }
+                var workItemsFromTasks = workItemTrackingHttpClient.GetReportingLinksAsync(new[] {"Parent"});
                 using (var excel = new XLWorkbook())
                 {
                     using (var worksheet = excel.Worksheets.Add("Estimation"))
@@ -340,9 +358,10 @@ namespace Core
                         worksheet.Row(1).Cell(2).Value = "State";
                         worksheet.Row(1).Cell(3).Value = "Estimated Effort";
                         worksheet.Row(1).Cell(4).Value = "Actual Effort";
+                        worksheet.Row(1).Cell(5).Value = "WorkItemType";
 
                         var count = 2;
-                        foreach (var workItem in workItems.OrderBy(x=> x.Fields["System.Title"].ToString()))
+                        foreach (var workItem in parentItems.OrderBy(x=> x.Fields["System.Title"].ToString()))
                         {
                             var workItemId = workItem.Id.ToString();
                             var title = workItem.Fields["System.Title"].ToString();
@@ -354,10 +373,11 @@ namespace Core
                             worksheet.Row(count).Cell(2).Value = state;
                             worksheet.Row(count).Cell(3).Value = estimatedEffort;
                             worksheet.Row(count).Cell(4).Value = actualEffort;
+                            worksheet.Row(count).Cell(5).Value = workItem.Fields["System.WorkItemType"].ToString();
                             count++;
                         }
                     }
-                    excel.SaveAs(_outputPath);
+                    excel.SaveAs(outputPath);
                 }
             }
         }
